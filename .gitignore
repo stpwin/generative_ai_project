@@ -1,0 +1,17 @@
+# Python cache and virtual environments
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Data folders (cache/outputs)
+data/cache/
+data/outputs/
+
+# API keys and secrets
+.env
+*.key
+
+# System files (Windows/macOS)
+Thumbs.db
+.DS_Store 
