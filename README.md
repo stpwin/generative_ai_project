@@ -40,6 +40,7 @@ A production-ready template for building scalable Generative AI apps — structu
 ├── handlers/ → Input/output processing and error management
 └── utils/ → Logging, caching, rate limiting, token counting
 
+```
 ---
 
 ## ⚡ Best Practices
