@@ -1,28 +1,35 @@
-from litellm import completion, supports_function_calling
-import litellm
+from dotenv import load_dotenv
+from openai import OpenAI
 import json
 import sys
 import os
 import uuid
-from litellm.caching.caching import Cache
+from datetime import datetime
 
-litellm.cache = Cache()
+load_dotenv()
+
+client = OpenAI(
+    api_key=os.environ.get("LITELLM_PROXY_API_KEY"),
+    base_url=os.environ.get("LITELLM_PROXY_API_BASE"),
+)
 
 # Add the src directory to the path so we can import our utilities
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 from utils.pretty_print import (
     pretty_print_response,
     pretty_print_messages,
-    pretty_print_tokens_usage,
-    pp,
 )
 
-model = "litellm_proxy/scb10x/llama3.1-typhoon2-8b-instruct"
+SYSTEM_PROMPT = (
+    "You are a snarky assistant.\n<current_datetime>"
+    + datetime.now().isoformat()
+    + "</current_datetime>"
+)
+MODEL = "scb10x/llama3.1-typhoon2-8b-instruct"
+
 session_id = str(uuid.uuid4())
 
 print("Session ID:", session_id)
-
-assert supports_function_calling(model=model) == False
 
 
 def get_current_weather(location, unit="fahrenheit"):
@@ -41,7 +48,8 @@ def get_current_weather(location, unit="fahrenheit"):
 
 def think(thought):
     """Think something"""
-    return json.dumps({"thought": thought})
+    # return json.dumps({"thought": thought})
+    return thought
 
 
 tools = [
@@ -68,7 +76,7 @@ tools = [
         "function": {
             "name": "think",
             "description": "Use the tool to think about something. It will not obtain new information or change the database, but just append the thought to the log. Use it when complex reasoning or some cache memory is needed.",
-            "input_schema": {
+            "parameters": {
                 "type": "object",
                 "properties": {
                     "thought": {
@@ -85,39 +93,45 @@ tools = [
 messages = [
     {
         "role": "system",
-        "content": "You are a snarky assistant.\nYou can call tool any time you want",
+        "content": SYSTEM_PROMPT,
     },
     {
         "role": "user",
-        "content": "What you think about you?",
+        "content": "What time is it?",
     },
 ]
 
-response = completion(
-    model=model,
+response = client.chat.completions.create(
+    model=MODEL,
     messages=messages,
     tool_choice="auto",
     tools=tools,
-    metadata={
-        "litellm_session_id": session_id,
-    },
-    caching=True,
+    extra_body={"litellm_session_id": session_id},
 )
 
-# Pretty print the first response using our utility
 pretty_print_response(response, "First LLM Response")
-
-# Also demonstrate other pretty print functions
 pretty_print_messages(messages, "Conversation Messages")
-pretty_print_tokens_usage(response.usage, "Token Usage")
+# pretty_print_tokens_usage(response.usage, "Token Usage")
 
 response_message = response.choices[0].message
 tool_calls = response_message.tool_calls
 
-print("\nLength of tool calls", tool_calls, len(tool_calls))
+print("\tTool calls", tool_calls)
+
+# Print all tool call names clearly separated from other output
+# if tool_calls:
+#     print("\n" + "="*50)
+#     print("TOOL CALLS MADE BY AI:")
+#     print("="*50)
+#     for i, tool_call in enumerate(tool_calls, 1):
+#         print(f"{i}. Tool Name: {tool_call.function.name}")
+#     print("="*50 + "\n")
 
 if tool_calls:
-    available_functions = {"get_current_weather": get_current_weather, "think": think}
+    available_functions = {
+        "get_current_weather": get_current_weather,
+        "think": think,
+    }
     messages.append(response_message)
     for tool_call in tool_calls:
         function_name = tool_call.function.name
@@ -125,20 +139,25 @@ if tool_calls:
         function_args = json.loads(tool_call.function.arguments)
         print("function_args", function_args)
         function_response = function_to_call(**function_args)
+
+        # Add context to tool response to prevent AI confusion
+        contextual_response = (
+            f"Tool '{function_name}' executed successfully. Result: {function_response}"
+        )
+
         messages.append(
             {
                 "tool_call_id": tool_call.id,
                 "role": "tool",
                 "name": function_name,
-                "content": function_response,
+                "content": contextual_response,
             }
-        )  # extend conversation with function response
-    second_response = completion(
-        model=model,
+        )
+    second_response = client.chat.completions.create(
+        model=MODEL,
         messages=messages,
-        metadata={"litellm_session_id": session_id},
-        caching=True,
-    )  # get a new response from the model where it can see the function response
+        extra_body={"litellm_session_id": session_id},
+    )
     pretty_print_response(second_response, "Second LLM Response")
 
 

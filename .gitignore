@@ -14,6 +14,9 @@ data/outputs/
 
 # System files (Windows/macOS)
 Thumbs.db
-.DS_Store 
+.DS_Store
 
 src/**/.gitkeep
+
+lib/
+bin/
